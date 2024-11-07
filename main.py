@@ -6,6 +6,7 @@ import argparse
 from datetime import datetime, timezone
 from fake_useragent import UserAgent
 from colorama import *
+from aiohttp_socks import ProxyConnector
 
 green = Fore.LIGHTGREEN_EX
 red = Fore.LIGHTRED_EX
@@ -15,12 +16,16 @@ black = Fore.LIGHTBLACK_EX
 reset = Style.RESET_ALL
 yellow = Fore.LIGHTYELLOW_EX
 
-
 class Grass:
     def __init__(self, userid, proxy):
         self.userid = userid
         self.proxy = proxy
-        self.ses = aiohttp.ClientSession()
+        # 使用 ProxyConnector 处理 SOCKS5 代理
+        if proxy:
+            self.connector = ProxyConnector.from_url(f'{proxy}')
+        else:
+            self.connector = None
+        self.ses = aiohttp.ClientSession(connector=self.connector)
 
     def log(self, msg):
         now = datetime.now(tz=timezone.utc).isoformat(" ").split(".")[0]
@@ -28,12 +33,14 @@ class Grass:
 
     @staticmethod
     async def ipinfo(proxy=None):
-        async with aiohttp.ClientSession() as client:
-            result = await client.get("https://api.ipify.org/", proxy=proxy)
+        # 使用 ProxyConnector 处理 SOCKS5 代理
+        connector = ProxyConnector.from_url(f'socks5://{proxy}') if proxy else None
+        async with aiohttp.ClientSession(connector=connector) as client:
+            result = await client.get("https://api.ipify.org/")
             return await result.text()
 
     async def start(self):
-        max_retry = 10
+        max_retry = 100
         retry = 1
         proxy = self.proxy
         if proxy is None:
@@ -54,15 +61,14 @@ class Grass:
         while True:
             try:
                 if retry >= max_retry:
-                    self.log(f"{yellow}max retrying reacted, skip the proxy !")
+                    self.log(f"{yellow}max retrying reached, skipping the proxy!")
                     await self.ses.close()
                     return
                 async with self.ses.ws_connect(
                     "wss://proxy2.wynd.network:4650/",
                     headers=headers,
-                    proxy=self.proxy,
-                    timeout=1000,
-                    autoclose=False,
+                    timeout=30,
+                    autoclose=False,                 
                 ) as wss:
                     res = await wss.receive_json()
                     auth_id = res.get("id")
@@ -83,7 +89,7 @@ class Grass:
                         },
                     }
                     await wss.send_json(auth_data)
-                    self.log(f"{green}成功连接 {white}到服务器!")
+                    self.log(f"{green}Successfully connected {white}to the server!")
                     retry = 1
                     while True:
                         ping_data = {
@@ -93,11 +99,10 @@ class Grass:
                             "data": {},
                         }
                         await wss.send_json(ping_data)
-                        self.log(f"{white}发送 {green}ping {white}到服务器 !")
+                        self.log(f"{white}Sent {green}ping {white}to server!")
                         pong_data = {"id": "F3X", "origin_action": "PONG"}
                         await wss.send_json(pong_data)
-                        self.log(f"{white}发送 {magenta}pong {white}到服务器 !")
-                        # you can edit the countdown in code below
+                        self.log(f"{white}Sent {magenta}pong {white}to server!")
                         await countdown(120)
             except KeyboardInterrupt:
                 await self.ses.close()
@@ -105,8 +110,8 @@ class Grass:
             except Exception as e:
                 self.log(f"{red}error : {white}{e}")
                 retry += 1
+                await asyncio.sleep(5)
                 continue
-
 
 async def countdown(t):
     for i in range(t, 0, -1):
@@ -118,7 +123,6 @@ async def countdown(t):
         print(f"waiting for {hour}:{minute}:{seconds} ", flush=True, end="\r")
         await asyncio.sleep(1)
 
-
 async def main():
     arg = argparse.ArgumentParser()
     arg.add_argument(
@@ -128,27 +132,25 @@ async def main():
     os.system("cls" if os.name == "nt" else "clear")
     print(
         f"""
-
-    {red}  本脚本由推特用户雪糕战神@Hy78516012开源使用 无任何收费！！！
+    {red}  This script is open source by Twitter user 雪糕战神@Hy78516012, no charges!!!
     {white}Gihub    : {green}github.com/Gzgod
-    {white}我的推特 ：{green}雪糕战神@Hy78516012
-    {green}Get some grass !
+    {white}Twitter  : {green}雪糕战神@Hy78516012
+    {green}Get some grass!
           """
     )
     token = open("token.txt", "r").read()
     userid = open("userid.txt", "r").read()
     if len(userid) <= 0:
-        print(f"{red}错误 : {white}请先输入您的用户ID!")
+        print(f"{red}Error: {white}Please enter your user ID!")
         exit()
     if not os.path.exists(args.proxy):
-        print(f"{red}{args.proxy} 未找到，请确保 {args.proxy} 可用！")
+        print(f"{red}{args.proxy} not found, please make sure {args.proxy} is available!")
         exit()
     proxies = open(args.proxy, "r").read().splitlines()
     if len(proxies) <= 0:
         proxies = [None]
     tasks = [Grass(userid, proxy).start() for proxy in proxies]
     await asyncio.gather(*tasks)
-
 
 if __name__ == "__main__":
     try:
