@@ -34,7 +34,7 @@ class Grass:
     @staticmethod
     async def ipinfo(proxy=None):
         # 使用 ProxyConnector 处理 SOCKS5 代理
-        connector = ProxyConnector.from_url(f'socks5://{proxy}') if proxy else None
+        connector = ProxyConnector.from_url(f'{proxy}') if proxy else None
         async with aiohttp.ClientSession(connector=connector) as client:
             result = await client.get("https://api.ipify.org/")
             return await result.text()
